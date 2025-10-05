@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Simple Chase Game</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            touch-action: none; /* Disable scrolling and other touch gestures */
+        }
+        canvas {
+            background-color: #fff;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Game Configuration ---
+        const MAX_CANVAS_WIDTH = 900;
+        const MAX_CANVAS_HEIGHT = 600;
+        const PLAYER_RADIUS = 16;
+        const PLAYER_SPEED = 3.2;
+        const ENEMY_SIZE = 80;
+        const INITIAL_ENEMY_SPEED = 1.8;
+        const ENEMY_SPEED_INCREASE_PER_SEC = 0.03;
+
+        // --- Game State ---
+        let player, enemy, keys, joystick, startTime, elapsedTime, isGameOver, enemyImage, isEnemyImageLoaded;
+        let lastTime = 0;
+
+        // --- Asset Loading ---
+        enemyImage = new Image();
+        enemyImage.src = 'enemy.jpg';
+        enemyImage.onload = () => {
+            isEnemyImageLoaded = true;
+        };
+        enemyImage.onerror = () => {
+            isEnemyImageLoaded = false;
+            console.error("Failed to load enemy.jpg. Using a fallback rectangle.");
+        };
+
+        // --- Game Functions ---
+
+        function reset() {
+            isGameOver = false;
+            startTime = performance.now();
+            elapsedTime = 0;
+
+            const canvasRatio = canvas.width / MAX_CANVAS_WIDTH;
+            
+            player = {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                radius: PLAYER_RADIUS * canvasRatio
+            };
+
+            enemy = {
+                x: ENEMY_SIZE * canvasRatio,
+                y: ENEMY_SIZE * canvasRatio,
+                width: ENEMY_SIZE * canvasRatio,
+                height: ENEMY_SIZE * canvasRatio,
+                speed: INITIAL_ENEMY_SPEED * canvasRatio
+            };
+
+            keys = {
+                ArrowUp: false, W: false,
+                ArrowDown: false, S: false,
+                ArrowLeft: false, A: false,
+                ArrowRight: false, D: false
+            };
+
+            joystick = {
+                active: false,
+                baseX: 0, baseY: 0,
+                stickX: 0, stickY: 0,
+                dx: 0, dy: 0
+            };
+        }
+
+        function handleResize() {
+            const oldWidth = canvas.width;
+            const oldHeight = canvas.height;
+
+            const scale = Math.min(
+                window.innerWidth / MAX_CANVAS_WIDTH,
+                window.innerHeight / MAX_CANVAS_HEIGHT,
+                1
+            );
+            const newWidth = MAX_CANVAS_WIDTH * scale;
+            const newHeight = MAX_CANVAS_HEIGHT * scale;
+
+            if (oldWidth > 0 && oldHeight > 0) {
+                const ratioX = newWidth / oldWidth;
+                const ratioY = newHeight / oldHeight;
+                if (player) player.x *= ratioX;
+                if (player) player.y *= ratioY;
+                if (enemy) enemy.x *= ratioX;
+                if (enemy) enemy.y *= ratioY;
+            }
+
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            
+            // Re-calculate sizes based on new canvas dimensions
+            const canvasRatio = canvas.width / MAX_CANVAS_WIDTH;
+            if(player) player.radius = PLAYER_RADIUS * canvasRatio;
+            if(enemy) {
+                enemy.width = ENEMY_SIZE * canvasRatio;
+                enemy.height = ENEMY_SIZE * canvasRatio;
+                enemy.speed = (INITIAL_ENEMY_SPEED + (elapsedTime / 1000) * ENEMY_SPEED_INCREASE_PER_SEC) * canvasRatio;
+            }
+
+
+            render(); // Re-render immediately after resize
+        }
+
+        function update(deltaTime) {
+            if (isGameOver) return;
+
+            elapsedTime = performance.now() - startTime;
+            const canvasRatio = canvas.width / MAX_CANVAS_WIDTH;
+
+            // --- Player Movement ---
+            let moveX = 0;
+            let moveY = 0;
+
+            if (joystick.active) {
+                moveX = joystick.dx;
+                moveY = joystick.dy;
+            } else {
+                if (keys.ArrowUp || keys.W) moveY -= 1;
+                if (keys.ArrowDown || keys.S) moveY += 1;
+                if (keys.ArrowLeft || keys.A) moveX -= 1;
+                if (keys.ArrowRight || keys.D) moveX += 1;
+            }
+
+            const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
+            if (magnitude > 0) {
+                player.x += (moveX / magnitude) * PLAYER_SPEED * canvasRatio;
+                player.y += (moveY / magnitude) * PLAYER_SPEED * canvasRatio;
+            }
+
+            // Player bounds collision
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+            // --- Enemy Movement ---
+            const dx = player.x - (enemy.x + enemy.width / 2);
+            const dy = player.y - (enemy.y + enemy.height / 2);
+            const enemyMagnitude = Math.sqrt(dx * dx + dy * dy);
+            
+            enemy.speed = (INITIAL_ENEMY_SPEED + (elapsedTime / 1000) * ENEMY_SPEED_INCREASE_PER_SEC) * canvasRatio;
+
+            if (enemyMagnitude > 0) {
+                enemy.x += (dx / enemyMagnitude) * enemy.speed;
+                enemy.y += (dy / enemyMagnitude) * enemy.speed;
+            }
+
+            // --- Collision Detection ---
+            const closestX = Math.max(enemy.x, Math.min(player.x, enemy.x + enemy.width));
+            const closestY = Math.max(enemy.y, Math.min(player.y, enemy.y + enemy.height));
+            const distanceX = player.x - closestX;
+            const distanceY = player.y - closestY;
+            const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+
+            if (distanceSquared < (player.radius * player.radius)) {
+                isGameOver = true;
+            }
+        }
+
+        function render() {
+            if (!player || !enemy) return; // Prevent rendering if state is not initialized
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Player
+            ctx.fillStyle = 'blue';
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Enemy
+            if (isEnemyImageLoaded) {
+                ctx.drawImage(enemyImage, enemy.x, enemy.y, enemy.width, enemy.height);
+            } else {
+                ctx.fillStyle = '#808080'; // Gray fallback
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            }
+            
+            // Draw Joystick
+            if (joystick.active) {
+                ctx.globalAlpha = 0.5;
+                // Base
+                ctx.fillStyle = 'grey';
+                ctx.beginPath();
+                ctx.arc(joystick.baseX, joystick.baseY, 60, 0, Math.PI * 2);
+                ctx.fill();
+                // Stick
+                ctx.fillStyle = 'darkgrey';
+                ctx.beginPath();
+                ctx.arc(joystick.stickX, joystick.stickY, 30, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+
+            // Draw UI
+            ctx.fillStyle = 'black';
+            ctx.font = `${Math.max(16, 24 * (canvas.width / MAX_CANVAS_WIDTH))}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText((elapsedTime / 1000).toFixed(2), canvas.width / 2, 10);
+
+            if (isGameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = 'white';
+                const fontSize1 = Math.max(24, 48 * (canvas.width / MAX_CANVAS_WIDTH));
+                const fontSize2 = Math.max(14, 20 * (canvas.width / MAX_CANVAS_WIDTH));
+                
+                ctx.font = `bold ${fontSize1}px sans-serif`;
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - fontSize1);
+                
+                ctx.font = `${fontSize2}px sans-serif`;
+                ctx.fillText('Press R to Retry or Tap', canvas.width / 2, canvas.height / 2 + 10);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            update(deltaTime);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('resize', handleResize);
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toUpperCase() === 'R' && isGameOver) {
+                reset();
+            }
+            // Use e.key directly for Arrow keys, and uppercase for wasd
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+            } else if (keys.hasOwnProperty(e.key.toUpperCase())) {
+                keys[e.key.toUpperCase()] = true;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+            } else if (keys.hasOwnProperty(e.key.toUpperCase())) {
+                keys[e.key.toUpperCase()] = false;
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (isGameOver) {
+                reset();
+                return;
+            }
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const touchX = touch.clientX - rect.left;
+            const touchY = touch.clientY - rect.top;
+
+            // Activate joystick if touch is in the bottom-left quadrant
+            if (touchX < canvas.width / 2 && touchY > canvas.height / 2) {
+                joystick.active = true;
+                joystick.baseX = touchX;
+                joystick.baseY = touchY;
+                joystick.stickX = touchX;
+                joystick.stickY = touchY;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!joystick.active) return;
+
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            joystick.stickX = touch.clientX - rect.left;
+            joystick.stickY = touch.clientY - rect.top;
+
+            let dx = joystick.stickX - joystick.baseX;
+            let dy = joystick.stickY - joystick.baseY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > 60) { // Clamp stick movement
+                dx = (dx / dist) * 60;
+                dy = (dy / dist) * 60;
+                joystick.stickX = joystick.baseX + dx;
+                joystick.stickY = joystick.baseY + dy;
+            }
+            
+            joystick.dx = dx;
+            joystick.dy = dy;
+
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (joystick.active) {
+                joystick.active = false;
+                joystick.dx = 0;
+                joystick.dy = 0;
+            }
+        });
+        
+        canvas.addEventListener('click', (e) => {
+            if (isGameOver) {
+                reset();
+            }
+        });
+
+
+        // --- Initialization ---
+        handleResize();
+        reset();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+</body>
+</html>
