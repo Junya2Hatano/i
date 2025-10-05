@@ -38,9 +38,10 @@
         const ENEMY_SIZE = 80;
         const INITIAL_ENEMY_SPEED = 1.8;
         const ENEMY_SPEED_INCREASE_PER_SEC = 0.03;
+        const DISTANCE_THRESHOLD = 120; // The distance at which the enemy image changes
 
         // --- Game State ---
-        let player, enemy, keys, joystick, startTime, elapsedTime, isGameOver, enemyImage, isEnemyImageLoaded;
+        let player, enemy, keys, joystick, startTime, elapsedTime, isGameOver, enemyImage, isEnemyImageLoaded, playerImage, isPlayerImageLoaded, closeEnemyImage, isCloseEnemyImageLoaded, isPlayerClose;
         let lastTime = 0;
 
         // --- Asset Loading ---
@@ -54,10 +55,31 @@
             console.error("Failed to load enemy.jpg. Using a fallback rectangle.");
         };
 
+        playerImage = new Image();
+        playerImage.src = 'girl.png';
+        playerImage.onload = () => {
+            isPlayerImageLoaded = true;
+        };
+        playerImage.onerror = () => {
+            isPlayerImageLoaded = false;
+            console.error("Failed to load girl.png. Using a fallback circle.");
+        };
+
+        closeEnemyImage = new Image();
+        closeEnemyImage.src = 'rui.jpg';
+        closeEnemyImage.onload = () => {
+            isCloseEnemyImageLoaded = true;
+        };
+        closeEnemyImage.onerror = () => {
+            isCloseEnemyImageLoaded = false;
+            console.error("Failed to load rui.jpg. Using a fallback rectangle.");
+        };
+
         // --- Game Functions ---
 
         function reset() {
             isGameOver = false;
+            isPlayerClose = false;
             startTime = performance.now();
             elapsedTime = 0;
 
@@ -163,6 +185,10 @@
             const dx = player.x - (enemy.x + enemy.width / 2);
             const dy = player.y - (enemy.y + enemy.height / 2);
             const enemyMagnitude = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if the player is close to the enemy
+            const threshold = DISTANCE_THRESHOLD * canvasRatio;
+            isPlayerClose = enemyMagnitude < threshold;
             
             enemy.speed = (INITIAL_ENEMY_SPEED + (elapsedTime / 1000) * ENEMY_SPEED_INCREASE_PER_SEC) * canvasRatio;
 
@@ -190,13 +216,19 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Draw Player
-            ctx.fillStyle = 'blue';
-            ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-            ctx.fill();
+            if (isPlayerImageLoaded) {
+                ctx.drawImage(playerImage, player.x - player.radius, player.y - player.radius, player.radius * 2, player.radius * 2);
+            } else {
+                ctx.fillStyle = 'blue';
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
             // Draw Enemy
-            if (isEnemyImageLoaded) {
+            if (isPlayerClose && isCloseEnemyImageLoaded) {
+                ctx.drawImage(closeEnemyImage, enemy.x, enemy.y, enemy.width, enemy.height);
+            } else if (isEnemyImageLoaded) {
                 ctx.drawImage(enemyImage, enemy.x, enemy.y, enemy.width, enemy.height);
             } else {
                 ctx.fillStyle = '#808080'; // Gray fallback
