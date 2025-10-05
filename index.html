@@ -41,7 +41,7 @@
         const DISTANCE_THRESHOLD = 120; // The distance at which the enemy image changes
 
         // --- Game State ---
-        let player, enemy, keys, joystick, startTime, elapsedTime, isGameOver, enemyImage, isEnemyImageLoaded, playerImage, isPlayerImageLoaded, closeEnemyImage, isCloseEnemyImageLoaded, isPlayerClose;
+        let player, enemy, keys, joystick, startTime, elapsedTime, isGameOver, enemyImage, isEnemyImageLoaded, playerImage, isPlayerImageLoaded, closeEnemyImage, isCloseEnemyImageLoaded, isPlayerClose, obstacle, obstacleImage, isObstacleImageLoaded;
         let lastTime = 0;
 
         // --- Asset Loading ---
@@ -75,6 +75,16 @@
             console.error("Failed to load rui.jpg. Using a fallback rectangle.");
         };
 
+        obstacleImage = new Image();
+        obstacleImage.src = '春巻き.jpg';
+        obstacleImage.onload = () => {
+            isObstacleImageLoaded = true;
+        };
+        obstacleImage.onerror = () => {
+            isObstacleImageLoaded = false;
+            console.error("Failed to load 春巻き.jpg. Using a fallback rectangle.");
+        };
+
         // --- Game Functions ---
 
         function reset() {
@@ -86,17 +96,24 @@
             const canvasRatio = canvas.width / MAX_CANVAS_WIDTH;
             
             player = {
-                x: canvas.width / 2,
+                x: canvas.width / 4,
                 y: canvas.height / 2,
                 radius: PLAYER_RADIUS * canvasRatio
             };
 
             enemy = {
-                x: ENEMY_SIZE * canvasRatio,
-                y: ENEMY_SIZE * canvasRatio,
+                x: canvas.width - ENEMY_SIZE * canvasRatio * 2,
+                y: canvas.height / 2,
                 width: ENEMY_SIZE * canvasRatio,
                 height: ENEMY_SIZE * canvasRatio,
                 speed: INITIAL_ENEMY_SPEED * canvasRatio
+            };
+
+            obstacle = {
+                x: canvas.width / 2 - 50 * canvasRatio,
+                y: canvas.height / 2 - 100 * canvasRatio,
+                width: 100 * canvasRatio,
+                height: 200 * canvasRatio
             };
 
             keys = {
@@ -133,6 +150,10 @@
                 if (player) player.y *= ratioY;
                 if (enemy) enemy.x *= ratioX;
                 if (enemy) enemy.y *= ratioY;
+                if (obstacle) {
+                    obstacle.x *= ratioX;
+                    obstacle.y *= ratioY;
+                }
             }
 
             canvas.width = newWidth;
@@ -145,6 +166,10 @@
                 enemy.width = ENEMY_SIZE * canvasRatio;
                 enemy.height = ENEMY_SIZE * canvasRatio;
                 enemy.speed = (INITIAL_ENEMY_SPEED + (elapsedTime / 1000) * ENEMY_SPEED_INCREASE_PER_SEC) * canvasRatio;
+            }
+            if(obstacle) {
+                obstacle.width = 100 * canvasRatio;
+                obstacle.height = 200 * canvasRatio;
             }
 
 
@@ -173,8 +198,20 @@
 
             const magnitude = Math.sqrt(moveX * moveX + moveY * moveY);
             if (magnitude > 0) {
-                player.x += (moveX / magnitude) * PLAYER_SPEED * canvasRatio;
-                player.y += (moveY / magnitude) * PLAYER_SPEED * canvasRatio;
+                const nextX = player.x + (moveX / magnitude) * PLAYER_SPEED * canvasRatio;
+                const nextY = player.y + (moveY / magnitude) * PLAYER_SPEED * canvasRatio;
+
+                // Obstacle collision detection
+                const obstacleClosestX = Math.max(obstacle.x, Math.min(nextX, obstacle.x + obstacle.width));
+                const obstacleClosestY = Math.max(obstacle.y, Math.min(nextY, obstacle.y + obstacle.height));
+                const obstacleDistanceX = nextX - obstacleClosestX;
+                const obstacleDistanceY = nextY - obstacleClosestY;
+                const obstacleDistanceSquared = (obstacleDistanceX * obstacleDistanceX) + (obstacleDistanceY * obstacleDistanceY);
+
+                if (obstacleDistanceSquared >= (player.radius * player.radius)) {
+                    player.x = nextX;
+                    player.y = nextY;
+                }
             }
 
             // Player bounds collision
@@ -214,6 +251,14 @@
 
             // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Obstacle
+            if (isObstacleImageLoaded) {
+                ctx.drawImage(obstacleImage, obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+            } else {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+            }
 
             // Draw Player
             if (isPlayerImageLoaded) {
